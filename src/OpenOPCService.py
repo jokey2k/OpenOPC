@@ -13,7 +13,7 @@ import win32service
 import win32event
 import servicemanager
 import winerror
-import _winreg
+import winreg
 import select
 import socket
 import os
@@ -27,7 +27,7 @@ try:
     import Pyro.protocol
     import Pyro.errors
 except ImportError:
-    print 'Pyro module required (http://pyro.sourceforge.net/)'
+    print('Pyro module required (http://pyro.sourceforge.net/)')
     exit()
 
 Pyro.config.PYRO_MULTITHREADED = 1
@@ -41,8 +41,8 @@ max_clients = 25
 def getvar(env_var):
     """Read system enviornment variable from registry"""
     try:
-        key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, 'SYSTEM\\CurrentControlSet\\Control\Session Manager\Environment',0,_winreg.KEY_READ)
-        value, valuetype = _winreg.QueryValueEx(key, env_var)
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 'SYSTEM\\CurrentControlSet\\Control\Session Manager\Environment',0,winreg.KEY_READ)
+        value, valuetype = winreg.QueryValueEx(key, env_var)
         return value
     except:
         return None
@@ -105,7 +105,7 @@ class opc(Pyro.core.ObjBase):
         init_times = self._init_times
         objects = self._opc_objects
         
-        hlist = [(k, hosts[k] if hosts.has_key(k) else '', init_times[k], objects[k].lastUsed) for k,v in reg.iteritems() if v == None]
+        hlist = [(k, hosts[k] if k in hosts else '', init_times[k], objects[k].lastUsed) for k,v in reg.items() if v == None]
         return hlist
 
     def force_close(self, guid):
@@ -195,7 +195,7 @@ if __name__ == '__main__':
             servicemanager.PrepareToHostSingle(OpcService)
             servicemanager.Initialize('zzzOpenOPCService', evtsrc_dll)
             servicemanager.StartServiceCtrlDispatcher()
-        except win32service.error, details:
+        except win32service.error as details:
             if details[0] == winerror.ERROR_FAILED_SERVICE_CONTROLLER_CONNECT:
                 win32serviceutil.usage()
     else:

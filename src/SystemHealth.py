@@ -38,7 +38,7 @@ class CPU:
         return value
 
 def _disk_info():
-    drive = unicode(os.getenv("SystemDrive"))
+    drive = str(os.getenv("SystemDrive"))
     freeuser = ctypes.c_int64()
     total = ctypes.c_int64()
     free = ctypes.c_int64()
@@ -156,8 +156,8 @@ def task_cpu(image_name):
     for i in range(2):
     
         for p in c.Win32_PerfRawData_PerfProc_Process(name=image_name):
-            id = long(p.IDProcess)
-            n1, d1 = long(p.PercentProcessorTime), long(p.Timestamp_Sys100NS)
+            id = int(p.IDProcess)
+            n1, d1 = int(p.PercentProcessorTime), int(p.Timestamp_Sys100NS)
             n0, d0, so_far = process_info.get(id, (0, 0, []))
 
             try:
