@@ -195,4 +195,19 @@ if __name__ == '__main__':
             if details.winerror == winerror.ERROR_FAILED_SERVICE_CONTROLLER_CONNECT:
                 win32serviceutil.usage()
     else:
-        win32serviceutil.HandleCommandLine(OpcService)
+        # foreground mode from http://github.com/ya-mouse/openopc
+        if '--foreground' in sys.argv:
+            print "Starting in foreground on %s:%s" % (opc_gate_host, opc_gate_port)
+            daemon = Pyro4.core.Daemon(host=opc_gate_host, port=opc_gate_port)
+            print "  registering opc"
+            daemon.register(opc(), 'opc')
+            socks = set(daemon.sockets)
+            print "  now listening"
+            while True:
+                ins,outs,exs = select.select(socks,[],[],1)
+                if ins:
+                    daemon.events(ins)
+
+            daemon.shutdown()
+        else:
+            win32serviceutil.HandleCommandLine(OpcService)
