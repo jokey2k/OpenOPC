@@ -21,7 +21,7 @@ import re, time, csv
 import OpenOPC
 
 try:
-   import Pyro
+   import Pyro4
 except ImportError:
    pyro_found = False
 else:
@@ -522,8 +522,8 @@ if action == 'read':
             com_connected = True
          else:
             com_connected = False
-            
-      except (Pyro.errors.ConnectionClosedError, Pyro.errors.ProtocolError), error_msg:
+
+      except (Pyro4.errors.ConnectionClosedError, Pyro4.errors.ProtocolError), error_msg:
          print 'Gateway Service: %s' % error_msg
          success = False
          pyro_connected = False
