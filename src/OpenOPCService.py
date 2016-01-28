@@ -23,17 +23,15 @@ import threading
 import OpenOPC
 
 try:
-    import Pyro.core
-    import Pyro.protocol
-    import Pyro.errors
+    import Pyro4
 except ImportError:
-    print('Pyro module required (http://pyro.sourceforge.net/)')
+    print ('Pyro4 module required (http://pyro.sourceforge.net/)')
     exit()
 
-Pyro.config.PYRO_MULTITHREADED = 1
+Pyro4.config.SERVERTYPE='thread'
 
 opc_class = OpenOPC.OPC_CLASS
-opc_gate_host = None
+opc_gate_host = "localhost"
 opc_gate_port = 7766
 inactive_timeout = 60
 max_clients = 25
@@ -81,30 +79,28 @@ def inactive_cleanup(exit_event):
             else:
                 stale_sessions = [s for s in all_sessions if time.time()-s[3] > (inactive_timeout*60)]
             for oid, ip, ctime, xtime in stale_sessions:
-                OpenOPC.close_session(oid, host=opc_gate_host, port=opc_gate_port)                
+                OpenOPC.close_session(oid, host=opc_gate_host, port=opc_gate_port)
                 time.sleep(1)
 
-class opc_client(Pyro.core.ObjBase, OpenOPC.client):
+class opc_client(OpenOPC.client):
     def __init__(self, remote_ip=''):
-        Pyro.core.ObjBase.__init__(self)
         OpenOPC.client.__init__(self)
         self.remote_ip = remote_ip
 
-class opc(Pyro.core.ObjBase):
+class opc(object):
     def __init__(self):
-        Pyro.core.ObjBase.__init__(self)
         self._remote_hosts = {}
         self._opc_objects = {}
         self._init_times = {}
 
     def get_clients(self):
         """Return list of server instances as a hash of GUID:host"""
-        
-        reg = self.getDaemon().getRegistered()
+
+        reg = Pyro4.core.DaemonObject(self._pyroDaemon).registered()[2:]
         hosts = self._remote_hosts
         init_times = self._init_times
         objects = self._opc_objects
-        
+
         hlist = [(k, hosts[k] if k in hosts else '', init_times[k], objects[k].lastUsed) for k,v in reg.items() if v == None]
         return hlist
 
@@ -112,48 +108,49 @@ class opc(Pyro.core.ObjBase):
         obj = self._opc_objects[guid]
         servicemanager.LogInfoMsg('\n\nForcing closed session started by %s' % obj.remote_ip)
         obj.close()
-    
+
     def create_client(self):
         """Create a new OpenOPC client instance in the Pyro server"""
 
-        remote_ip = self.getLocalStorage().caller.addr[0]
-        servicemanager.LogInfoMsg('\n\nConnect from %s' % remote_ip)
+        remote_ip = Pyro4.current_context.client.sock.getpeername()[0]
+        #servicemanager.LogInfoMsg('\n\nConnect from %s' % remote_ip)
 
         opc_obj = opc_client(remote_ip)
-        uri = self.getDaemon().connect(opc_obj)
-        
+
+        uri = self._pyroDaemon.register(opc_obj)
+        uuid = uri.asString()
         opc_obj._open_serv = self
         opc_obj._open_self = opc_obj
-        opc_obj._open_host = self.getDaemon().hostname
-        opc_obj._open_port = self.getDaemon().port        
-        opc_obj._open_guid = uri.objectID
+        opc_obj._open_host = opc_gate_host
+        opc_obj._open_port = opc_gate_port
+        opc_obj._open_guid = uuid
 
-        self._remote_hosts[opc_obj.GUID()] = '%s' % (remote_ip)
-        self._opc_objects[opc_obj.GUID()] = opc_obj
-        self._init_times[opc_obj.GUID()] =  time.time()
+        self._remote_hosts[uuid] = '%s' % (remote_ip)
+        self._opc_objects[uuid] = opc_obj
+        self._init_times[uuid] =  time.time()
 
-        return Pyro.core.getProxyForURI(uri)
+        return Pyro4.Proxy(uri)
 
     def release_client(self, obj):
         """Release a OpenOPC client instance in the Pyro server"""
 
-        remote_ip = self.getLocalStorage().caller.addr[0]
-        servicemanager.LogInfoMsg('\n\nDisconnect from %s' % remote_ip)
+        remote_ip = Pyro4.current_context.client.sock.getpeername()[0]
+        #servicemanager.LogInfoMsg('\n\nDisconnect from %s' % remote_ip)
 
-        self.getDaemon().disconnect(obj)
+        self._pyroDaemon.unregister(obj)
         del self._remote_hosts[obj.GUID()]
         del self._opc_objects[obj.GUID()]
         del self._init_times[obj.GUID()]
         del obj
-   
+
 class OpcService(win32serviceutil.ServiceFramework):
     _svc_name_ = "zzzOpenOPCService"
     _svc_display_name_ = "OpenOPC Gateway Service"
-    
+
     def __init__(self, args):
         win32serviceutil.ServiceFramework.__init__(self, args)
         self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
-    
+
     def SvcStop(self):
         servicemanager.LogInfoMsg('\n\nStopping service')
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
@@ -166,8 +163,10 @@ class OpcService(win32serviceutil.ServiceFramework):
         p = threading.Thread(target=inactive_cleanup, args=(exit_event,))
         p.start()
 
-        daemon = Pyro.core.Daemon(host=opc_gate_host, port=opc_gate_port)
-        daemon.connect(opc(), "opc")
+        daemon = Pyro4.core.Daemon(host=opc_gate_host, port=opc_gate_port)
+        daemon.register(opc(), "opc")
+
+        socks = daemon.sockets
 
         stop_pending = False
 
@@ -177,17 +176,14 @@ class OpcService(win32serviceutil.ServiceFramework):
                 stop_pending = True
             elif stop_pending and not exit_event.is_set():
                 break
-    
-            socks = daemon.getServerSockets()
+
             ins,outs,exs = select.select(socks,[],[],1)
-            for s in socks:
-                if s in ins:
-                    daemon.handleRequests()
-                    break
+            if ins:
+                daemon.events(ins)
 
         p.join()
         daemon.shutdown()
-        
+
 if __name__ == '__main__':
     if len(sys.argv) == 1:
         try:
@@ -196,7 +192,22 @@ if __name__ == '__main__':
             servicemanager.Initialize('zzzOpenOPCService', evtsrc_dll)
             servicemanager.StartServiceCtrlDispatcher()
         except win32service.error as details:
-            if details[0] == winerror.ERROR_FAILED_SERVICE_CONTROLLER_CONNECT:
+            if details.winerror == winerror.ERROR_FAILED_SERVICE_CONTROLLER_CONNECT:
                 win32serviceutil.usage()
     else:
-        win32serviceutil.HandleCommandLine(OpcService)
+        # foreground mode from http://github.com/ya-mouse/openopc
+        if '--foreground' in sys.argv:
+            print ("Starting in foreground on %s:%s" % (opc_gate_host, opc_gate_port))
+            daemon = Pyro4.core.Daemon(host=opc_gate_host, port=opc_gate_port)
+            print ("  registering opc")
+            daemon.register(opc(), 'opc')
+            socks = set(daemon.sockets)
+            print ("  now listening")
+            while True:
+                ins,outs,exs = select.select(socks,[],[],1)
+                if ins:
+                    daemon.events(ins)
+
+            daemon.shutdown()
+        else:
+            win32serviceutil.HandleCommandLine(OpcService)

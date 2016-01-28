@@ -11,7 +11,7 @@
 
 from sys import *
 from getopt import *
-from os import *
+from os import environ
 import signal
 import sys
 import os
@@ -21,7 +21,7 @@ import re, time, csv
 import OpenOPC
 
 try:
-   import Pyro
+   import Pyro4
 except ImportError:
    pyro_found = False
 else:
@@ -123,7 +123,7 @@ class SigHandler:
       self.signaled = 0
       self.sn = None
   def __call__(self, sn, sf):
-      self.sn = sn 
+      self.sn = sn
       self.signaled += 1
 
 # FUNCTION: Iterable version of rotate()
@@ -132,7 +132,7 @@ def irotate(data, num_columns, value_idx = 1):
    if num_columns == 0:
       for row in data: yield row
       return
-   
+
    new_row = []
 
    for i, row in enumerate(data):
@@ -154,7 +154,7 @@ def rotate(data, num_columns, value_idx = 1):
    return list(irotate(data, num_columns, value_idx))
 
 # FUNCTION: Print output in the specified style from a list of data
-   
+
 def output(data, style = 'table', value_idx = 1):
    global write
    name_idx = 0
@@ -177,12 +177,12 @@ def output(data, style = 'table', value_idx = 1):
    # List passed (multiple rows passed all at once)
    elif type(data) in (list, tuple):
       generator = False
-      
+
       if len(data) == 0: return
 
       if type(data[0]) not in (list, tuple):
          data = [[e] for e in data]
-         
+
       if style == 'table' or style == '':
          pad_length = []
          num_columns = len(data[0])
@@ -226,7 +226,7 @@ def output(data, style = 'table', value_idx = 1):
             if i == 0:
                pad_length.append(0)
 
-         for j, item in enumerate(row):               
+         for j, item in enumerate(row):
             if style == 'csv':
                if j > 0: write(',')
                write('%s' % to_str(item))
@@ -257,7 +257,7 @@ def time2str(t):
    return d.strftime('%x %H:%M:%S')
 
 
-######## MAIN ######## 
+######## MAIN ########
 
 # Parse command line arguments
 
@@ -269,17 +269,17 @@ try:
    opts, args = gnu_getopt(argv[1:], 'rwlpfiqRSevx:m:C:H:P:c:h:s:L:F:z:o:a:u:t:g:y:n:', ['read','write','list','properties','flat','info','mode=','gate-host=','gate-port=','class=','host=','server=','output=','pause=','pipe','servers','sessions','repeat=','function=','append=','update=','timeout=','size=','source=','id=','verbose','recursive','rotate=','errors','name='])
 except GetoptError:
    usage()
-   exit()   
+   exit()
 
 for o, a in opts:
    if o in ['-m', '--mode']       : opc_mode = a
    if o in ['-C', '--class']      : opc_class = a
    if o in ['-n', '--name']       : client_name = a
-   if o in ['-H', '--open-host']  : open_host = a;  opc_mode = 'open' 
+   if o in ['-H', '--open-host']  : open_host = a;  opc_mode = 'open'
    if o in ['-P', '--open-port']  : open_port = a;  opc_mode = 'open'
    if o in ['-h', '--host']       : opc_host = a
    if o in ['-s', '--server']     : opc_server = a
-   
+
    if o in ['-r', '--read']       : action = 'read'
    if o in ['-w', '--write']      : action = 'write'
    if o in ['-l', '--list']       : action = 'list'
@@ -310,7 +310,7 @@ for o, a in opts:
 if num_columns > 0 and style in ('values', 'pairs'):
    print("'%s' style format may not be used with rotate" % style)
    exit()
-   
+
 if opc_mode not in ('open', 'dcom'):
    print("'%s' is not a valid protocol mode (options: dcom, open)" % opc_mode)
    exit()
@@ -332,7 +332,7 @@ if read_function not in ('sync', 'async'):
    exit()
 else:
    sync = (read_function == 'sync')
-   
+
 if data_source not in ('cache', 'device', 'hybrid'):
    print("'%s' is not a valid data source mode (options: cache, device, hybrid)" % data_source)
    exit()
@@ -366,7 +366,7 @@ if pipe:
    if len(tags) == 0:
       print('Input stream must contain ITEMs (one per line)')
       exit()
-      
+
    if action == 'write':
       try:
          tag_value_pairs = [(item[0], item[1]) for item in tags_nested]
@@ -398,7 +398,7 @@ if property_ids != None:
    except ValueError:
       print('Property ids must be numeric')
       exit()
-   
+
 if action in ('read','write') and not pipe and len(tags) == 0:
    usage()
    exit()
@@ -431,7 +431,7 @@ if action == 'sessions':
       error_msg = sys.exc_info()[1]
       print("Cannot connect to OpenOPC service at %s:%s - %s" % (open_host, open_port, error_msg))
    exit()
-   
+
 # Connect to OpenOPC service (Open mode)
 
 if opc_mode == 'open':
@@ -473,7 +473,7 @@ if action == 'read':
       rotate = irotate
    else:
       opc_read = opc.read
-            
+
    if verbose:
       def trace(msg): print(msg)
       opc.set_trace(trace)
@@ -507,7 +507,7 @@ if action == 'read':
                                   sync=sync,
                                   include_error=include_err_msg),
                         num_columns), style)
-                        
+
       except OpenOPC.TimeoutError as error_msg:
          if opc_mode == 'open': error_msg = error_msg[0]
          print(error_msg)
@@ -517,13 +517,13 @@ if action == 'read':
          if opc_mode == 'open': error_msg = error_msg[0]
          print(error_msg)
          success = False
- 
+
          if opc.ping():
             com_connected = True
          else:
             com_connected = False
-            
-      except (Pyro.errors.ConnectionClosedError, Pyro.errors.ProtocolError) as error_msg:
+
+      except (Pyro4.errors.ConnectionClosedError, Pyro4.errors.ProtocolError) as error_msg:
          print('Gateway Service: %s' % error_msg)
          success = False
          pyro_connected = False
@@ -536,7 +536,7 @@ if action == 'read':
       except IOError:
          opc.close()
          exit()
-            
+
       else:
          success = True
 
@@ -560,7 +560,7 @@ if action == 'read':
    except OpenOPC.OPCError as error_msg:
       if opc_mode == 'open': error_msg = error_msg[0]
       print(error_msg)
-         
+
 # ACTION: Write Items
 
 elif action == 'write':
@@ -586,7 +586,7 @@ elif action == 'write':
       print('\nWrote %d of %d items (%.2f seconds)' % (success, len(tag_value_pairs), time.time() - start_time))
 
 # ACTION: List Items (Tree Browser)
-   
+
 elif action == 'list':
    if opc_mode == 'open':
       opc_list = opc.list
@@ -601,7 +601,7 @@ elif action == 'list':
       print(error_msg)
 
 # ACTION: List Items (Flat Browser)
-   
+
 elif action == 'flat':
    try:
       output(opc.list(tags, flat=True), style)
